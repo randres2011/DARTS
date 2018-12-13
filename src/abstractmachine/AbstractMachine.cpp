@@ -38,7 +38,7 @@ darts :: hwloc :: AbstractMachine :: discoverTopologyWithLLC(void)
 
     hwloc_obj_t obj;
     for (obj = o->first_child;
-            obj && obj->type != HWLOC_OBJ_CACHE;
+            obj && (obj->type != HWLOC_OBJ_L5CACHE || obj->type != HWLOC_OBJ_L4CACHE || obj->type != HWLOC_OBJ_L3CACHE || obj->type != HWLOC_OBJ_L2CACHE); 
             obj = obj->first_child)
         ;
 
