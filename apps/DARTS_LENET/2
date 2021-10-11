@@ -1,0 +1,241 @@
+/* 
+ * Copyright (c) 2011-2014, University of Delaware
+ * All rights reserved.
+ * 
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ * 
+ * 1. Redistributions of source code must retain the above copyright notice,
+ * this list of conditions and the following disclaimer.
+ * 
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+// DARTS PLUS
+
+#pragma once
+#include "darts.h"
+#include <vector>
+
+#include "matrix/matrix.h"
+#include "Parameters.h"
+#include "ComputeCodelet.h"
+#include "FuncCodelet.h"
+using namespace darts;
+
+class OneConvLayer : public ThreadedProcedure
+{
+	public:
+
+		OneConvLayer(matrix *input,matrix *kernel, matrix *output,double *bias,
+				double (*action)(double),int isx, int isy, int ks, int strd,
+				int IC, int JC,int input_ch,int output_ch,std::vector<Codelet*> *address,
+				std::vector<Codelet*> *next_map,std::vector<Codelet*> *cur_map,Codelet *sig)
+		{
+			incRef();
+			int outsize_i=(isx-ks+1)/strd;
+			int outsize_j=(isy-ks+1)/strd;
+			//std::cout<<"Single Conv Initializing.\n";
+			mmArgs *args;
+			for(int ch=0;ch<output_ch;ch++)
+			{
+				args=new mmArgs(input, &(kernel[ch*input_ch]), &output[ch],isx, isy, ks, strd,IC, JC);
+				for(int num=0;num<IC*JC;num++)
+				{
+					int i=num/JC;
+					int j=num%JC;
+
+					int xtile=outsize_i/IC;
+					int ytile=outsize_j/JC;
+					int xmod=outsize_i%IC;
+					int ymod=outsize_j%JC;
+
+					int output_tempxSize = (i + 1 == IC) ? (xtile + xmod) : (xtile);
+					int output_tempySize = (j + 1 == JC) ? (ytile + ymod) : (ytile);
+
+					int output_xstart = i * xtile;
+					int output_xend = output_xstart + output_tempxSize;
+					int output_ystart = j * ytile;
+					int output_yend = output_ystart + output_tempySize;
+
+					int input_xstart = output_xstart * strd;
+					int input_xend = output_xend * strd + ks - 1;
+					int input_ystart = output_ystart * strd;
+					int input_yend = output_yend * strd + ks - 1;
+
+					int isize=input_xend-input_xstart;
+					int jsize=input_yend-input_ystart;
+
+					Codelet* temp_address=new TileCompute(input_ch*isize*jsize+1, input_ch*isize*jsize, this, SHORTWAIT, args,
+							bias[ch],action,input_ch,num,
+							output_xstart,output_xend,output_ystart, output_yend,&next_map[ch*outsize_i*outsize_j]);
+					for(int k=0;k<input_ch;k++)
+					{
+					for(int i=input_xstart;i<input_xend;i++)
+					{
+						for(int j=input_ystart;j<input_yend;j++)
+						{
+							cur_map[i*isy+j+k*isx*isy].push_back(temp_address);
+						}
+
+					}
+					}
+					address->push_back(temp_address);
+				}
+			}
+			sig->decDep();
+			//std::cout<<"One Single Conv Initialized.\n";
+
+		}
+};
+
+class Conv2Full : public ThreadedProcedure
+{
+public:
+
+	Conv2Full(matrix *input,double *output,matrix *kernel,double *bias,
+			double (*action)(double),int ks,int cut,int input_ch,int output_num,
+			std::vector<Codelet*> *address,std::vector<Codelet*> *next_map,std::vector<Codelet*> *cur_map,Codelet *sig)
+	{
+		//std::cout<<"Conv2Full Initializing\n";
+		incRef();
+		int tile=output_num/cut;
+		int mod=output_num%cut;
+		for(int i=0;i<cut;i++)
+		{
+			int output_Size = (i + 1 == cut) ? (tile + mod) : (tile);
+			Codelet *temp=new TileConv2Full(ks*ks*input_ch+1,ks*ks*input_ch,this,SHORTWAIT,input,
+					&output[i*tile],&kernel[i*tile*input_ch],&bias[i*tile],action,
+					input_ch,output_Size,&next_map[i*tile]);
+			address->push_back(temp);
+			for(int j=0;j<ks*ks*input_ch;j++)
+			{
+				cur_map[j].push_back(temp);
+			}
+		}
+		//std::cout<<"Conv2Full Initialized\n";
+		sig->decDep();
+	}
+};
+
+class FullConnect : public ThreadedProcedure
+{
+public:
+	FullConnect(double *input, double *output, double *kernel,double *bias,
+			double (*action)(double),int in_size, int out_size, int cut,
+		std::vector<Codelet*> *address,std::vector<Codelet*> *next_map,std::vector<Codelet*> *cur_map,Codelet *sig)
+	{
+		incRef();
+		//std::cout<<"Full initializing\n";
+		for(int i=0;i<cut;i++)
+		{
+			int tile=out_size/cut;
+			int mod=out_size%cut;
+			int tile_size = (i + 1 == cut) ? (tile + mod) : (tile);
+			Codelet *temp=new TileFull(in_size+1,in_size,this,SHORTWAIT,input,&output[i*tile],
+				&kernel[i*in_size],&bias[i*tile],action,in_size,tile_size,&next_map[i*tile]);
+			address->push_back(temp);
+			for(int j=0;j<in_size;j++)
+			{
+				cur_map[j].push_back(temp);
+			}
+		}
+		//std::cout<<"Full Initialized\n";
+		sig->decDep();
+	}
+};
+class PoolLayer : public ThreadedProcedure
+{
+public:
+	PoolLayer(matrix *input,matrix *output, int ks, int input_ch,
+			std::vector<Codelet*> *address,std::vector<Codelet*> *next_map,
+			std::vector<Codelet*> *cur_map,Codelet *sig)
+			{
+				//std::cout<<"Pooling Initializing.\n";
+				incRef();
+				int isx=input->getM();
+				int isy=input->getN();
+				for(int i=0;i<input_ch;i++)
+				{
+					Codelet* temp=new PoolCompute(isx*isy+1,isx*isy,this,SHORTWAIT,&input[i],&output[i],ks,&next_map[isx*isy*i/ks/ks]);
+					address->push_back(temp);
+					for(int x=0;x<isx*isy;x++)
+					{
+						cur_map[x+i*isx*isy].push_back(temp);
+					}
+				}
+				sig->decDep();
+				//std::cout<<"Pooling Layer Initialized.\n";
+			}
+
+};
+
+class InputLayer : public ThreadedProcedure
+{
+	public:
+		matrix *input;
+		LoadInput input_cd;
+
+		InputLayer(matrix *input_,std::vector<Codelet*> *address,std::vector<Codelet*> *next_map,Codelet* sig):
+			input(input_),input_cd(1,1,this,SHORTWAIT,next_map,input_)
+
+	
+	{
+		//std::cout<<"Input Initializing.\n";
+		incRef();		
+		address->push_back(&input_cd);
+		sig->decDep();
+
+		//std::cout<<"Input Initialized.\n";
+	}
+		
+
+};
+
+class FinishLayer : public ThreadedProcedure
+{
+	private:
+		
+		finish_cd finish;
+
+
+	public:
+		FinishLayer(std::vector<Codelet*> *address,std::vector<Codelet*> *cur_map,Codelet *finishSig,int pre_cut,Codelet* sig,uint64_t *endTime,int LayerNum,std::vector<Codelet*> *address_all):
+			finish(pre_cut+1,pre_cut,this,SHORTWAIT,finishSig,endTime,LayerNum,address_all)
+	{
+		//std::cout<<"Finish Initializing.\n";
+		incRef();
+		for(int i=0;i<pre_cut;i++)
+		{
+			cur_map[i].push_back(&finish);
+		}
+		address->push_back(&finish);	
+		sig->decDep();
+		//std::cout<<"Finish Initialized.\n";
+
+	}
+};
+/*
+class softmax : public ThreadedProcedure
+{
+public:
+	softmax(double input,double loss, int count, int label)
+{
+
+}
+};
+*/

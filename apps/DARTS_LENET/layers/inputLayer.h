@@ -25,69 +25,58 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+// DARTS PLUS
 
 #pragma once
 #include "darts.h"
-#include "loopCodelets.h"
-#include "matrix.h"
+#include "../infrastructure/layerTemplate.h"
+#include <vector>
+
+#include "../matrix/matrix.h"
+#include "../Parameters.h"
+#include "../infrastructure/Framework.h"
+
 using namespace darts;
 
-class mmTile : public ThreadedProcedure
+class LoadInput : public Codelet
 {
-public:
-
-    class iloop : public loop
-    {
     public:
 
-        class jloop : public loop
-        {
-        public:
+        LoadInput(uint32_t dep, uint32_t res, ThreadedProcedure * myTP, uint32_t stat):
+            Codelet(dep, res, myTP, stat) { }
 
-            tileMult mul;
+        virtual void fire(void);
 
-            jloop(unsigned int it, Codelet * toSig, mmArgs * ARGS, matrix * tempA, int I) :
-            loop(it, toSig),
-            mul(0, 0, this, it, ARGS, tempA, I, it, this)
-            {
-                add(&mul);
-		tempA->printMatrix();
-		//std::cout<<"jloop"<<I<<" "<<it<<std::endl;
-            }
-        };
-
-        matrix tempA;
-
-        codeletFor<jloop> jl;
-
-        iloop(unsigned int it, Codelet * toSig, int JC, mmArgs * ARGS) :
-        loop(it, toSig),
-        tempA(ARGS->a, it*(ARGS->iTile), 0,
-        ((int)it + 1 == ARGS->iCut) ? (ARGS->iMod + ARGS->iTile) : (ARGS->iTile),
-        ARGS->msk),
-
-        jl(0, 1, this, SHORTWAIT, toSig, JC, ARGS, &tempA, it)
-        {
-            add(&jl);
-	    //std::cout<<"iloop"<<JC<<" "<<it<<std::endl;
-
-        }
-    };
-
-    mmArgs args;
-    paraFor<iloop> il;
-
-    mmTile(matrix * A, matrix * B, matrix * C, int MSI, int MSJ, int MSK, int IC, int JC, Codelet * toSig) :
-    args(A, B, C,
-    MSI, MSJ, MSK,
-    IC, JC),
-    il(0, 1, this, SHORTWAIT, toSig, IC, JC, &args)
-    {
-	std::cout<<"A"<<std::endl;
-	A->printMatrix();
-        std::cout<<"B"<<std::endl;
-        B->printMatrix();
-	
-        add(&il);
-    }
 };
+
+class InputLayer : public Layer
+{
+    public:
+        matrix *input;
+        LoadInput input_cd;
+
+        InputLayer(trig_cd *prevLayerTrig, trig_cd *nextLayerTrig, uint32_t layerId, uint64_t *startTime, uint64_t *stopTime, matrix *input_) :
+            Layer(prevLayerTrig, nextLayerTrig, layerId, startTime, stopTime),
+            input(input_), input_cd(1, 1, this, SHORTWAIT)
+        {
+            Layer::insertElementToMap((Codelet *)&input_cd);
+            Layer::registerCodelet((Codelet *)&input_cd);
+            Layer::layerReadyToStart();
+        }
+
+
+};
+
+void
+LoadInput::fire(void)
+{
+    InputLayer *myTP = static_cast<InputLayer*>(myTP_); // We obtain our TP
+    
+    initOneMatrix(myTP->input);
+    for (uint32_t i = 0; i < myTP->Layer::nextLayerMaps->size(); i++)
+    {			
+        myTP->Layer::nextLayerMaps->at(i)->decDep();
+    }
+    //std::cout<<next_map->size()<<" LoadInput\n";
+    //resetCodelet();
+}

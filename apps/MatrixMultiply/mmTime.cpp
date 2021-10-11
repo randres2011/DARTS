@@ -38,31 +38,27 @@
 #define INNERLOOP 10
 #define OUTERLOOP 10
 
-#ifndef MAX
-	#define MAX(x,y) (x>y) ? x : y
-#endif
-#ifndef MIN
-	#define MIN(x,y) (x<y) ? x : y
-#endif
+#define MAX(x,y) (x>y) ? x : y
+#define MIN(x,y) (x<y) ? x : y
 
 using namespace darts;
 
 int main(int argc, char * argv[])
 {
-    if (argc != 8)
+    if (argc != 6)
     {
         std::cout << "enter number of TP CD TPM CDM size iCut jCut" << std::endl;
         return 0;
     }
     int tps = atoi(argv[1]);
     int cds = atoi(argv[2]);
-    int tpm = atoi(argv[3]);
-    int cdm = atoi(argv[4]);
-    int size = atoi(argv[5]);
-    int iCut = atoi(argv[6]);
-    int jCut = atoi(argv[7]);
+    //int tpm = atoi(argv[3]);
+    //int cdm = atoi(argv[4]);
+    int size = atoi(argv[3]);
+    int iCut = atoi(argv[4]);
+    int jCut = atoi(argv[5]);
     
-    ThreadAffinity affin(cds, tps, SPREAD, tpm, cdm);
+    ThreadAffinity affin(cds, tps, SPREAD, TPDYNAMIC, MCDYNAMIC);
     if (affin.generateMask())
     {
         Runtime * rt = new Runtime(&affin);
@@ -73,7 +69,7 @@ int main(int argc, char * argv[])
 
         initRandomMatrix(&A);
         initRandomMatrix(&B);
-        
+        /*
         uint64_t innerTime = 0;
         uint64_t outerTime = 0;
 
@@ -99,17 +95,20 @@ int main(int argc, char * argv[])
                 innerTime+=tempTime;
             }
             innerTime=innerTime-innerMin-innerMax;
-            std::cout << "inner min: " << innerMin << " max: " << innerMax << std::endl; 
+            //std::cout << "inner min: " << innerMin << " max: " << innerMax << std::endl; 
             uint64_t tempTime = innerTime/(INNERLOOP); 
             outerMin = MIN(outerMin,tempTime);
             outerMax = MAX(outerMax,tempTime);
-            std::cout << "outer min: " << outerMin << " max: " << outerMax << std::endl; 
+            //std::cout << "outer min: " << outerMin << " max: " << outerMax << std::endl; 
             outerTime+=tempTime;
             innerTime = 0;
         }
         outerTime=outerTime-outerMin-outerMax;
         std::cout << outerTime/OUTERLOOP << std::endl;
-        
+        */
+	C.resetMatrix();
+        rt->run(launch<mmTile>(&A,&B,&C,size,size,size,iCut,jCut,&Runtime::finalSignal));
+
     }
     return 0;
 }

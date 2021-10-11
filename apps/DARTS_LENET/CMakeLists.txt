@@ -29,15 +29,14 @@
 #                                                                              #
 ################################################################################
 
-add_subdirectory (Fib)
-add_subdirectory (Runtime)
-add_subdirectory (TP)
-add_subdirectory (CD)
-add_subdirectory (Fanout)
-add_subdirectory (Chain)
-add_subdirectory (Tree)
-add_subdirectory (MatrixMultiply)
-add_subdirectory (Mergesort)
-add_subdirectory (FFT)
-add_subdirectory (FastMergesort)
-add_subdirectory (DARTS_LENET)
+add_library(DARTS_CNN_Framework infrastructure/Framework.h infrastructure/Framework.cpp infrastructure/Frame.h infrastructure/Frame.cpp)
+add_library(DARTS_CNN_Layers infrastructure/layerTemplate.h infrastructure/layerTemplate.cpp)
+
+target_link_libraries(DARTS_CNN_Framework DARTS_CNN_Layers)
+
+add_executable(main matrix/matrix.cpp framework/forwardPropagation.cpp main.cpp )
+if ( MKL )
+    target_link_libraries(main DARTS_CNN_Framework darts mkl_intel_lp64 mkl_sequential mkl_core)
+else()
+    target_link_libraries(main DARTS_CNN_Framework darts acml)
+endif ( MKL )

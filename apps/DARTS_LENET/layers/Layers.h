@@ -25,49 +25,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+// DARTS PLUS
 
-#include "loopCodelets.h"
-#include "loopTPs.h"
-#include "matrix.h"
-#include <assert.h>
+#pragma once
+#include "darts.h"
+#include <vector>
 
-#define MYTP(X) X * my##X = static_cast<X*>(myTP_)
-#define MIN(X,Y) (X < Y) ? (X) : (Y)
-#define SCRATCH 524288
+#include "../matrix/matrix.h"
+#include "../Parameters.h"
 
-using namespace darts;
-void
-tileMult::fire(void)
-{
-    INT tempISize = (i + 1 == args->iCut) ? (args->iTile + args->iMod) : (args->iTile);
-    INT tempJSize = (j + 1 == args->jCut) ? (args->jTile + args->jMod) : (args->jTile);
-#ifdef MKL
-    matrix C(tempISize, tempJSize);
-#else
-    matrix C(tempJSize, tempISize);
-#endif
-    DGEMM(tempISize,
-          tempJSize,
-          args->msk,
-          1,
-          A->getPtr(),
-          A->getN(),
-          &args->b->getPtr()[j * args->jTile],
-          args->b->getN(),
-          0,
-          C.getPtr(),
-          C.getN());
-    //std::cout<<std::endl<<"tileMult::fire"<<tempISize<<" "<<tempJSize<<std::endl;
-    //A->printMatrix();
-    //std::cout<<std::endl;
-    //C.printMatrix();
-    
-
-#ifdef MKL
-    copyMatrix(args->c, &C, i * args->iTile, j * args->jTile);
-#else
-    copyMatrix(args->c, &C, j * args->jTile, i * args->iTile);
-#endif
-    
-    myLoop->toSignal->decDep();
-}
+// Include the layers
+#include "inputLayer.h"
+#include "convLayer.h"
+#include "poolLayer.h"
+#include "conv2FullLayer.h"
+#include "fullConnectLayer.h"
+#include "finishLayer.h"

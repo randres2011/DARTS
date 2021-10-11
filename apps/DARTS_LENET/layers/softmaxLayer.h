@@ -25,69 +25,31 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+// DARTS PLUS
 
 #pragma once
 #include "darts.h"
-#include "loopCodelets.h"
-#include "matrix.h"
+#include <vector>
+
+#include "../matrix/matrix.h"
+#include "../Parameters.h"
 using namespace darts;
 
-class mmTile : public ThreadedProcedure
+class softmax : public ThreadedProcedure
 {
 public:
-
-    class iloop : public loop
-    {
-    public:
-
-        class jloop : public loop
+    softmax(double *input,double *loss, int count, int label,
+            std::vector<Codelet*> *address,std::vector<Codelet*> *next_map,
+            std::vector<Codelet*> *cur_map,Codelet *trig_sig)
         {
-        public:
-
-            tileMult mul;
-
-            jloop(unsigned int it, Codelet * toSig, mmArgs * ARGS, matrix * tempA, int I) :
-            loop(it, toSig),
-            mul(0, 0, this, it, ARGS, tempA, I, it, this)
+            incRef();
+            Codelet* temp = new softmax_cd(input,loss,count,label,next_map);
+            address->push_back(temp);
+            for(int i=0;i<count;i++)
             {
-                add(&mul);
-		tempA->printMatrix();
-		//std::cout<<"jloop"<<I<<" "<<it<<std::endl;
+                cur_map[i].push_back(temp);
             }
-        };
-
-        matrix tempA;
-
-        codeletFor<jloop> jl;
-
-        iloop(unsigned int it, Codelet * toSig, int JC, mmArgs * ARGS) :
-        loop(it, toSig),
-        tempA(ARGS->a, it*(ARGS->iTile), 0,
-        ((int)it + 1 == ARGS->iCut) ? (ARGS->iMod + ARGS->iTile) : (ARGS->iTile),
-        ARGS->msk),
-
-        jl(0, 1, this, SHORTWAIT, toSig, JC, ARGS, &tempA, it)
-        {
-            add(&jl);
-	    //std::cout<<"iloop"<<JC<<" "<<it<<std::endl;
-
+            trig_sig->decDep();
         }
-    };
-
-    mmArgs args;
-    paraFor<iloop> il;
-
-    mmTile(matrix * A, matrix * B, matrix * C, int MSI, int MSJ, int MSK, int IC, int JC, Codelet * toSig) :
-    args(A, B, C,
-    MSI, MSJ, MSK,
-    IC, JC),
-    il(0, 1, this, SHORTWAIT, toSig, IC, JC, &args)
-    {
-	std::cout<<"A"<<std::endl;
-	A->printMatrix();
-        std::cout<<"B"<<std::endl;
-        B->printMatrix();
-	
-        add(&il);
-    }
 };
+
